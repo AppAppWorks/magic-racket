@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 // eslint-disable-next-line no-unused-vars
-import { LanguageClient, LanguageClientOptions } from "vscode-languageclient/node";
+import { LanguageClient, LanguageClientOptions, PrepareRenameRequest, RenameRequest } from "vscode-languageclient/node";
 import * as os from "os";
 import * as com from "./commands";
 import { TaskProvider } from "./tasks";
@@ -10,11 +10,13 @@ let langClient: LanguageClient;
 let isLangClientRunning = false;
 
 let taskProvider: vscode.Disposable | undefined;
+let renameProvider: vscode.Disposable | undefined;
 
 export function deactivate(): Promise<void> {
   if (taskProvider) {
     taskProvider.dispose();
   }
+  renameProvider?.dispose();
 
   if (!langClient) {
     return Promise.reject(new Error("There is no language server client to be deactivated"));
@@ -110,6 +112,45 @@ export function activate(context: vscode.ExtensionContext): void {
   vscode.window.onDidCloseTerminal((terminal) => {
     terminals.forEach((val, key) => val === terminal && terminals.delete(key) && val.dispose());
     repls.forEach((val, key) => val === terminal && repls.delete(key) && val.dispose());
+  });
+
+  renameProvider = vscode.languages.registerRenameProvider("racket", {
+    prepareRename(document, position, token) {
+      const wordRange = document.getWordRangeAtPosition(position);
+      if (!wordRange) {
+        return;
+      }
+      return langClient
+        .sendRequest(
+          PrepareRenameRequest.type,
+          {
+            textDocument: { uri: document.uri.toString() },
+            position: wordRange.start,
+          },
+          token,
+        )
+        .then((range) => {
+          if (range && "start" in range && "end" in range) {
+            return new vscode.Range(
+              new vscode.Position(range.start.line, range.start.character),
+              new vscode.Position(range.end.line, range.end.character),
+            );
+          }
+          return undefined;
+        });
+    },
+
+    provideRenameEdits(document, position, newName, token) {
+      return langClient.sendRequest(
+        RenameRequest.type,
+        {
+          textDocument: { uri: document.uri.toString() },
+          position,
+          newName,
+        },
+        token,
+      ) as Promise<vscode.WorkspaceEdit>;
+    },
   });
 
   const loadInRepl = reg("loadFileInRepl", () => com.loadInRepl(repls));
