@@ -4,9 +4,9 @@ import {
   runFileInTerminal,
   createRepl,
   loadFileInRepl,
-  executeSelectionInRepl,
+  executeSelectionInRepl
 } from "./repl";
-import { withFilePath, withRacket, withEditor, withREPL } from "./utils";
+import { withFilePath, withRacket, withEditor, withREPL, withRaco } from "./utils";
 
 function getOrDefault<K, V>(map: Map<K, V>, key: K, getDefault: () => V): V {
   const value = map.get(key);
@@ -36,6 +36,24 @@ export function runInTerminal(terminals: Map<string, vscode.Terminal>): void {
         terminal = getOrDefault(terminals, filePath, () => createTerminal(filePath));
       }
       saveActiveTextEditorAndRun(() => runFileInTerminal(command, filePath, terminal));
+    });
+  });
+}
+
+export function testInTerminal(terminals: Map<string, vscode.Terminal>): void {
+  withFilePath((filePath: string) => {
+    withRaco((command: string[]) => {
+      let terminal: vscode.Terminal;
+      if (
+        vscode.workspace
+          .getConfiguration("magicRacket.outputTerminal")
+          .get("numberOfOutputTerminals") === "one"
+      ) {
+        terminal = getOrDefault(terminals, "one", () => createTerminal(null));
+      } else {
+        terminal = getOrDefault(terminals, filePath, () => createTerminal(filePath));
+      }
+      saveActiveTextEditorAndRun(() => runFileInTerminal([...command, "test"], filePath, terminal));
     });
   });
 }
